@@ -1,312 +1,436 @@
 """Zekrom drawing spec -> SVG preview + SwiftUI ContentView.swift + Assets colors.
 
-Coordinates follow SwiftUI ZStack semantics: origin at screen centre, y down.
-Each part: shape, frame (w,h), rotation (deg, clockwise, around own centre), offset (x,y).
-Parts marked sym=True are drawn at +x and mirrored to -x (ForEach over side = -1, 1).
-All custom shapes are left-right symmetric, so mirroring = negate x offset and rotation.
+Zekrom is traced from the official Black & White artwork (760 x 1000 px).
+Design coordinates below are in that artwork's pixels; everything is scaled by
+K = 0.5 into a 380 x 500 pt canvas for SwiftUI.
 
-usage: python3 gen.py svg OUT.svg | swift OUT.swift | assets ASSETS_DIR
+Two kinds of parts:
+  poly  - custom `Outline` shape through a list of points (smooth=True rounds the corners)
+  shape - built-in SwiftUI shape: frame (w, h), rotation, .position(x, y) inside the canvas
+Background parts ("Sky") use .offset from the screen centre instead.
+
+usage: python3 zekrom_gen.py svg OUT.svg [--ref REF.jpg] | swift OUT.swift | assets ASSETS_DIR
 """
 import json, math, os, sys
 
-W, H = 393, 852  # iPhone 15 points
-S = 0.9  # .scaleEffect on the Zekrom ZStack
+W, H = 393, 852          # iPhone 15 screen in points
+K = 0.5                  # artwork px -> canvas pt
+CW, CH = 380, 500        # canvas size in pt
+CANVAS_Y = 20            # canvas centre offset from screen centre
 
 COLORS = {
-    "StormSky": (0.17, 0.20, 0.33),
-    "CloudGray": (0.30, 0.33, 0.45),
-    "BoltYellow": (1.00, 0.86, 0.30),
-    "ZekromBlack": (0.12, 0.12, 0.14),
-    "ZekromGray": (0.30, 0.31, 0.35),
-    "ZekromEdge": (0.47, 0.49, 0.56),
-    "ZekromRed": (0.95, 0.15, 0.25),
-    "ZekromBlue": (0.30, 0.72, 1.00),
+    "StormSky": (0.60, 0.66, 0.76),
+    "CloudGray": (0.44, 0.49, 0.59),
+    "ZekromBody": (0.29, 0.33, 0.34),
+    "ZekromShade": (0.13, 0.14, 0.15),
+    "ZekromOutline": (0.04, 0.04, 0.05),
+    "ZekromBlue": (0.29, 0.74, 0.93),
+    "ZekromRed": (0.90, 0.30, 0.30),
 }
 
-# custom shapes: unit-rect polygons, all symmetric about x = 0.5
-POLYS = {
-    "Blade": ("翅膀的羽刃：上尖下寬的五邊形", [(0.5, 0), (1, 0.3), (0.72, 1), (0.28, 1), (0, 0.3)]),
-    "Spike": ("尖刺：三角形", [(0.5, 0), (1, 1), (0, 1)]),
-    "Bolt": ("閃電", [(0.55, 0), (0.1, 0.55), (0.45, 0.55), (0.3, 1), (0.9, 0.4), (0.55, 0.4), (0.85, 0)]),
-    "Crest": ("頭頂的大角冠", [(0.5, 0), (0.85, 0.55), (1, 1), (0.5, 0.8), (0, 1), (0.15, 0.55)]),
-}
-
-# group -> (struct name, comment)
 GROUPS = {
-    "Sky": ("StormBackdrop", "雷雲、閃電與腳下的岩石（不跟著 Zekrom 縮放）"),
-    "Tail": ("ZekromTail", "尾巴：黑色尾巴加上發出藍光的發電機"),
-    "Wing": ("ZekromWings", "翅膀：從肩膀伸出的骨架，末端展開四片羽刃"),
-    "Legs": ("ZekromLegs", "雙腿：大腿、小腿、腳掌與腳爪"),
-    "Body": ("ZekromTorso", "身體：脖子、軀幹、胸甲與腹甲"),
-    "Arms": ("ZekromArms", "手臂：肩膀、上臂、前臂、手與爪子"),
-    "Head": ("ZekromHead", "頭：角冠、側角、臉、口鼻與紅色眼睛"),
+    "Sky": ("StormBackdrop", "背景：雷雲、閃電、雨絲與岩石"),
+    "BackWing": ("ZekromBackWing", "後方的小翅膀（被脖子擋住一半）"),
+    "Tail": ("ZekromTail", "尾巴：圓形的渦輪發電機，右側有尖刺"),
+    "LeftLeg": ("ZekromLeftLeg", "左腿：往左跨出去的大腿與腳"),
+    "RightLeg": ("ZekromRightLeg", "右腿：大腿、膝蓋護甲、小腿與三根腳趾"),
+    "LeftArm": ("ZekromLeftArm", "左手：往左下伸出的手臂與張開的手掌"),
+    "Torso": ("ZekromTorso", "身體：胸膛、腹部與兩腿之間的腹甲"),
+    "Head": ("ZekromHead", "脖子與頭：往後延伸的頭冠、藍色角尖、紅眼睛"),
+    "FrontWing": ("ZekromFrontWing", "前方的大翅膀：像張開的手，由三片長條羽板組成"),
+    "RightArm": ("ZekromRightArm", "右手：肩膀、舉起的拳頭與前臂護甲"),
 }
 
-parts = []  # (group, dict)
+parts = []
 
 
-def add(group, shape, w, h, x=0, y=0, rot=0, fill="ZekromBlack", note=None, **kw):
-    parts.append((group, dict(shape=shape, w=w, h=h, x=x, y=y, rot=rot, fill=fill, note=note, **kw)))
+def poly(group, note, pts, fill="ZekromBody", smooth=False, stroke=True, opacity=None):
+    parts.append((group, dict(kind="poly", note=note, pts=pts, fill=fill, smooth=smooth,
+                              stroke=stroke, opacity=opacity)))
 
 
-def limb(group, shape, p, q, width, **kw):
-    """Place a shape whose long axis runs from base p to top q."""
+def shape(group, note, s, x, y, w, h, rot=0, fill="ZekromBody", stroke=None, **kw):
+    parts.append((group, dict(kind="shape", note=note, shape=s, x=x, y=y, w=w, h=h, rot=rot,
+                              fill=fill, stroke=stroke, **kw)))
+
+
+def line(group, note, p, q, width, fill="ZekromBlue", **kw):
+    """Thin capsule from p to q (artwork px) - used for the blue rim highlights."""
     (x1, y1), (x2, y2) = p, q
     L = math.hypot(x2 - x1, y2 - y1)
     rot = math.degrees(math.atan2(x2 - x1, -(y2 - y1)))
-    if shape in ("Capsule", "Ellipse", "Rectangle", "RoundedRectangle"):
-        rot = (rot + 90) % 180 - 90  # these look the same after a half turn
-    add(group, shape, width, round(L), round((x1 + x2) / 2), round((y1 + y2) / 2), round(rot), **kw)
+    rot = (rot + 90) % 180 - 90
+    shape(group, note, "Capsule", (x1 + x2) / 2, (y1 + y2) / 2, width, L, rot, fill=fill, **kw)
 
 
-def polar(p, deg, L):
-    return (p[0] + L * math.sin(math.radians(deg)), p[1] - L * math.cos(math.radians(deg)))
+OUT = True  # black outline
+
+# ================= background (screen offsets, pt) =================
+shape("Sky", "雷雲", "Ellipse", -110, -330, 280, 110, fill="CloudGray", opacity=0.8, sky=True)
+shape("Sky", None, "Ellipse", 120, -350, 260, 100, fill="CloudGray", opacity=0.7, sky=True)
+shape("Sky", None, "Capsule", 20, -300, 330, 70, fill="CloudGray", opacity=0.6, sky=True)
+RAIN = [(-150, -150), (-90, 20), (160, -40), (130, 170), (-160, 190), (60, -230)]
+shape("Sky", "雨絲：用 ForEach 把同一條細長方形放到不同位置", "Rectangle", 0, 0, 2, 60, 15,
+      fill="ZekromOutline", opacity=0.15, sky=True, rain=RAIN)
+shape("Sky", "藍色閃電（捷克羅姆的雷擊）", "Bolt", -150, -250, 44, 110, -12, fill="ZekromBlue", shadow=("ZekromBlue", 10), sky=True)
+shape("Sky", "腳下的岩石", "RoundedRectangle", 0, 285, 360, 60, cr=24, fill="CloudGray", sky=True)
+
+# ================= Zekrom (artwork px) =================
+# --- back wing ---
+poly("BackWing", "翅膀外形", [(222, 343), (160, 352), (95, 400), (106, 413), (150, 400), (122, 428),
+                           (160, 430), (192, 412), (165, 442), (205, 446), (240, 420), (240, 380)])
+poly("BackWing", "羽板之間的陰影", [(150, 400), (192, 386), (192, 412), (160, 430)], fill="ZekromShade", stroke=False)
+
+# --- tail ---
+poly("Tail", "尾巴後側的深色板與尖刺", [(615, 520), (655, 527), (685, 505), (682, 548), (668, 600),
+                                     (672, 668), (648, 632), (620, 640)], fill="ZekromShade")
+shape("Tail", "尾巴外殼", "Circle", 510, 638, 270, 270, stroke=OUT)
+shape("Tail", "上方的排氣口", "Ellipse", 445, 585, 110, 48, rot=-8, fill="ZekromShade", stroke=OUT)
+shape("Tail", "渦輪扇葉的開口（放射漸層，中心透出藍光）", "Ellipse", 540, 672, 128, 158, fill="FAN", stroke=OUT)
+for i, d in enumerate([0.78, 0.56, 0.34]):
+    shape("Tail", "同心圓的扇葉格柵" if i == 0 else None, "Ellipse", 540, 672, 128 * d, 158 * d,
+          fill=None, stroke=("ZekromOutline", 1))
+shape("Tail", "發電中的藍光", "Circle", 540, 672, 22, 22, fill="ZekromBlue", shadow=("ZekromBlue", 12))
+shape("Tail", "用 trim 畫出外殼上的弧線", "Circle", 510, 638, 230, 230, fill=None, trim=(0.55, 0.95),
+      stroke=("ZekromOutline", 1.5), rot=0)
+
+# --- left leg ---
+poly("LeftLeg", "大腿", [(245, 622), (165, 668), (115, 700), (88, 735), (85, 762), (110, 782), (150, 778),
+                        (215, 762), (285, 755), (300, 690)], smooth=True)
+poly("LeftLeg", "腳", [(128, 778), (205, 782), (224, 778), (213, 800), (230, 848), (165, 862), (80, 874),
+                      (80, 860), (105, 838), (128, 802)])
+poly("LeftLeg", "腳背的深色護甲", [(150, 800), (205, 795), (222, 845), (170, 858)], fill="ZekromShade", stroke=False)
+line("LeftLeg", "藍色反光", (100, 722), (168, 676), 5)
+
+# --- right leg ---
+poly("RightLeg", "大腿", [(320, 590), (395, 640), (445, 690), (474, 752), (466, 800), (440, 814),
+                         (385, 812), (348, 790), (322, 740)], smooth=True)
+poly("RightLeg", "膝蓋的深色護甲", [(362, 682), (440, 692), (470, 750), (446, 802), (392, 810), (362, 788)],
+     fill="ZekromShade")
+line("RightLeg", None, (385, 710), (398, 760), 5)
+poly("RightLeg", "小腿與腳掌", [(468, 792), (556, 792), (598, 870), (622, 935), (622, 985), (400, 985),
+                           (404, 925), (438, 885), (468, 840)])
+for i, (x, r) in enumerate([(432, -8), (502, 0), (586, 8)]):
+    shape("RightLeg", "三根腳趾：上圓下平的 UnevenRoundedRectangle" if i == 0 else None, "Uneven",
+          x, 948, 58, 78, r, radii=(29, 8, 8, 29), stroke=OUT)
+    line("RightLeg", "腳趾上的藍色反光" if i == 0 else None, (x + 2, 925), (x + 4, 965), 5)
+
+# --- left arm ---
+poly("LeftArm", "手臂", [(190, 410), (232, 430), (234, 470), (222, 512), (206, 538), (220, 545), (202, 560),
+                        (200, 576), (150, 596), (120, 612), (110, 630), (92, 650), (80, 652), (60, 640),
+                        (50, 655), (40, 652), (15, 645), (10, 625), (50, 580), (100, 552), (150, 537),
+                        (168, 522), (170, 470)])
+poly("LeftArm", "掌心", [(56, 592), (112, 574), (112, 608), (88, 640), (62, 630)], fill="ZekromShade", stroke=False)
+for i, (x, y) in enumerate([(88, 592), (66, 614), (92, 622)]):
+    shape("LeftArm", "手指" if i == 0 else None, "Ellipse", x, y, 18, 24, rot=30, fill="ZekromBody", stroke=OUT)
+line("LeftArm", "藍色反光", (30, 600), (90, 562), 5)
+
+# --- torso ---
+poly("Torso", "兩腿之間的腹甲", [(228, 560), (335, 555), (352, 620), (346, 700), (352, 758), (300, 776),
+                             (250, 760), (224, 690), (218, 610)], smooth=True)
+line("Torso", "腹甲上的藍線", (262, 600), (252, 740), 4)
+line("Torso", None, (305, 600), (318, 745), 4)
+poly("Torso", "胸膛與腰", [(215, 360), (195, 395), (185, 440), (200, 470), (226, 500), (240, 562),
+                         (335, 560), (338, 520), (362, 472), (410, 452), (445, 415), (450, 350), (430, 312),
+                         (380, 302), (320, 316), (290, 300), (275, 340)])
+poly("Torso", "腰部的深色 V 字", [(242, 500), (312, 498), (306, 540), (275, 585), (250, 560)], fill="ZekromShade")
+poly("Torso", "胸肌的深色護甲", [(310, 350), (345, 330), (392, 340), (400, 376), (372, 402), (320, 396)],
+     fill="ZekromShade")
+poly("Torso", None, [(196, 420), (216, 404), (238, 424), (232, 470), (208, 468)], fill="ZekromShade")
+line("Torso", "胸口的藍線", (290, 400), (268, 492), 4)
+
+# --- neck + head ---
+poly("Head", "脖子", [(210, 300), (248, 278), (282, 288), (292, 340), (282, 395), (236, 410), (216, 360)])
+line("Head", None, (232, 320), (236, 390), 4)
+poly("Head", "頭與往後延伸的頭冠", [(138, 275), (148, 235), (168, 210), (182, 205), (186, 222), (206, 200),
+                             (226, 191), (256, 192), (282, 198), (300, 214), (322, 218), (345, 207),
+                             (375, 213), (407, 227), (372, 224), (360, 224), (355, 246), (338, 240),
+                             (318, 246), (298, 248), (280, 246), (270, 262), (256, 272), (252, 300),
+                             (215, 314), (178, 306), (155, 290)])
+poly("Head", "下巴的深色面甲", [(160, 264), (262, 272), (252, 300), (215, 312), (178, 305), (156, 288)],
+     fill="ZekromShade")
+poly("Head", "頭冠尖端的藍色", [(378, 214), (407, 227), (378, 223)], fill="ZekromBlue", stroke=False)
+line("Head", "頭頂的藍色反光", (152, 240), (175, 212), 5)
+line("Head", None, (228, 194), (280, 200), 4)
+shape("Head", "紅色眼睛", "Ellipse", 207, 231, 30, 13, rot=-15, fill="ZekromRed", stroke=OUT)
+shape("Head", "瞳孔", "Circle", 203, 231, 7, 7, fill="ZekromOutline")
+
+# --- front wing ---
+poly("FrontWing", "翅膀外形", [(462, 320), (446, 290), (448, 215), (405, 210), (440, 178), (510, 110),
+                             (600, 68), (752, 12), (746, 58), (700, 84), (712, 120), (734, 120),
+                             (722, 180), (700, 186), (692, 240), (676, 283), (510, 300), (472, 312)])
+poly("FrontWing", "羽板之間的陰影", [(552, 150), (690, 84), (706, 122)], fill="ZekromShade")
+poly("FrontWing", None, [(552, 232), (700, 184), (692, 240)], fill="ZekromShade")
+line("FrontWing", "翅膀前緣的藍色反光", (420, 205), (500, 118), 5)
+line("FrontWing", None, (530, 100), (740, 16), 4)
+
+# --- right arm ---
+poly("RightArm", "肩膀", [(362, 286), (430, 296), (456, 338), (440, 372), (392, 360), (366, 330)], smooth=True)
+poly("RightArm", "上臂", [(420, 340), (476, 330), (496, 380), (476, 425), (432, 414), (410, 380)], smooth=True)
+poly("RightArm", "前臂護甲", [(510, 362), (636, 372), (652, 446), (640, 525), (606, 570), (550, 562),
+                            (540, 500), (500, 470)])
+poly("RightArm", None, [(560, 442), (622, 430), (612, 468)], fill="ZekromShade", stroke=False)
+line("RightArm", None, (560, 368), (632, 374), 4)
+shape("RightArm", "拳頭", "Ellipse", 515, 420, 92, 126, rot=-10, stroke=OUT)
+shape("RightArm", "指節", "Circle", 498, 366, 36, 36, stroke=OUT)
+poly("RightArm", "爪子", [(530, 404), (505, 414), (528, 426)], fill="ZekromShade")
+poly("RightArm", None, [(496, 466), (464, 480), (494, 482)], fill="ZekromShade")
 
 
-EDGE = ("ZekromEdge", 2)
-
-# ---------------- background: clouds + bolts ----------------
-add("Sky", "Ellipse", 260, 90, -120, -330, fill="CloudGray", opacity=0.6, note="雷雲")
-add("Sky", "Ellipse", 220, 80, 130, -350, fill="CloudGray", opacity=0.5)
-add("Sky", "Capsule", 300, 60, 40, -300, fill="CloudGray", opacity=0.4)
-add("Sky", "Bolt", 50, 120, -150, -350, rot=-10, fill="BoltYellow", shadow=("BoltYellow", 12), note="閃電（加黃色陰影當作發光）")
-add("Sky", "Bolt", 40, 100, 160, -330, rot=15, fill="BoltYellow", shadow=("BoltYellow", 10), opacity=0.85)
-add("Sky", "Capsule", 340, 44, 0, 272, fill="CloudGray", opacity=0.8, note="腳下的岩石")
-
-# ---------------- tail: turbine generator ----------------
-limb("Tail", "Capsule", (40, 150), (140, 230), 56, stroke=EDGE, note="尾巴")
-add("Tail", "Circle", 100, 100, 140, 230, stroke=("ZekromEdge", 3), note="發電機外殼")
-add("Tail", "Circle", 64, 64, 140, 230, fill="GLOW", shadow=("ZekromBlue", 20), note="發電機核心：白到藍的放射漸層＋藍色光暈")
-add("Tail", "RingTrim", 82, 82, 140, 230, fill="ZekromBlue", trim=(0.1, 0.9), lw=5, rot=-40, note="用 trim 剪掉一段的藍色電流環")
-
-# ---------------- wings ----------------
-shoulder = (62, -95)
-wrist = polar(shoulder, 45, 100)
-limb("Wing", "Capsule", shoulder, wrist, 30, sym=True, stroke=EDGE, note="翅膀骨架")
-for deg, L in [(-22, 165), (2, 150), (26, 128), (50, 100)]:
-    limb("Wing", "Blade", wrist, polar(wrist, deg, L), 32, sym=True, stroke=EDGE, note="四片羽刃，由內往外展開")
-add("Wing", "Circle", 34, 34, round(wrist[0]), round(wrist[1]), sym=True, fill="ZekromGray", note="翅膀關節")
-
-# ---------------- legs ----------------
-add("Legs", "Ellipse", 96, 130, 55, 140, rot=-8, sym=True, stroke=EDGE, note="大腿")
-add("Legs", "Capsule", 30, 60, 50, 120, rot=-8, sym=True, fill="ZekromGray", opacity=0.9, note="大腿上的灰色護甲")
-add("Legs", "RoundedRectangle", 58, 90, 64, 215, rot=5, cr=22, sym=True, stroke=EDGE, note="小腿")
-add("Legs", "Uneven", 86, 38, 70, 264, radii=(19, 6, 6, 19), sym=True, fill="ZekromGray", note="腳掌：上方圓角大、下方圓角小")
-for dx in (-26, 0, 26):
-    add("Legs", "Capsule", 14, 26, 70 + dx, 285, sym=True, fill="ZekromEdge", note="三根腳爪")
-
-# ---------------- body ----------------
-add("Body", "Rectangle", 50, 60, 0, -115, note="脖子")
-add("Body", "RoundedRectangle", 150, 210, 0, 20, cr=55, stroke=EDGE, note="軀幹")
-add("Body", "Uneven", 110, 70, 0, -45, radii=(40, 12, 12, 40), fill="ZekromGray", note="胸甲")
-for i, yy in enumerate([35, 68, 99]):
-    add("Body", "Capsule", 84 - i * 12, 22, 0, yy, fill="ZekromGray", note="三片腹甲，越往下越窄")
-
-# ---------------- arms ----------------
-sh, el, wr = (82, -70), (115, 20), (110, 105)
-add("Arms", "Circle", 64, 64, sh[0], sh[1], sym=True, stroke=EDGE, note="肩膀")
-limb("Arms", "Capsule", sh, el, 42, sym=True, stroke=EDGE, note="上臂")
-limb("Arms", "Capsule", el, wr, 52, sym=True, stroke=EDGE, note="前臂")
-limb("Arms", "Spike", el, polar(el, 150, 70), 20, sym=True, fill="ZekromGray", note="手肘的刃")
-add("Arms", "Circle", 44, 44, wr[0], wr[1] + 12, sym=True, fill="ZekromGray", note="手")
-hand = (wr[0], wr[1] + 14)
-for d in (-30, 0, 30):
-    limb("Arms", "Spike", hand, polar(hand, 180 + d, 44), 12, sym=True, fill="ZekromEdge", note="三根爪子")
-
-# ---------------- head ----------------
-add("Head", "Crest", 70, 120, 0, -228, stroke=EDGE, note="頭頂角冠")
-limb("Head", "Spike", (30, -185), polar((30, -185), 50, 55), 22, sym=True, stroke=EDGE, note="兩側的角")
-add("Head", "Ellipse", 96, 86, 0, -170, stroke=EDGE, note="臉")
-add("Head", "RoundedRectangle", 60, 50, 0, -138, cr=22, stroke=EDGE, note="口鼻")
-add("Head", "Capsule", 30, 4, 0, -126, fill="ZekromGray", note="嘴巴")
-add("Head", "Ellipse", 20, 9, 22, -172, rot=18, sym=True, fill="ZekromRed", shadow=("ZekromRed", 6), note="發光的紅眼睛")
-
-
-# =================== SVG preview ===================
+# ======================== SVG preview ========================
 def rgb(name):
     r, g, b = COLORS[name]
     return f"rgb({int(r*255)},{int(g*255)},{int(b*255)})"
 
 
-def svg_shape(p):
-    w, h, s = p["w"], p["h"], p["shape"]
+def smooth_d(pts):
+    n = len(pts)
+    mid = lambda a, b: ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+    s = mid(pts[-1], pts[0])
+    d = f"M{s[0]},{s[1]}"
+    for i in range(n):
+        m = mid(pts[i], pts[(i + 1) % n])
+        d += f" Q{pts[i][0]},{pts[i][1]} {m[0]},{m[1]}"
+    return d + "Z"
+
+
+def canvas_pts(p):
+    return [(round(x * K), round(y * K)) for x, y in p["pts"]]
+
+
+def svg_fill(f):
+    return {"FAN": "url(#fan)", None: "none"}.get(f) or rgb(f)
+
+
+def svg_part(p):
+    attrs = f'fill="{svg_fill(p["fill"])}"'
+    if p.get("opacity"):
+        attrs += f' opacity="{p["opacity"]}"'
+    st = p.get("stroke")
+    if st:
+        c, w = st if isinstance(st, tuple) else ("ZekromOutline", 1.5)
+        attrs += f' stroke="{rgb(c)}" stroke-width="{w}" stroke-linejoin="round"'
+    if p.get("shadow"):
+        attrs += f' filter="url(#sh_{p["shadow"][0]})"'
+    if p["kind"] == "poly":
+        pts = canvas_pts(p)
+        d = smooth_d(pts) if p["smooth"] else "M" + " L".join(f"{x},{y}" for x, y in pts) + "Z"
+        return f'<path d="{d}" {attrs}/>'
+    s = p["shape"]
+    if p.get("sky"):
+        x, y, w, h = W / 2 + p["x"], H / 2 + p["y"], p["w"], p["h"]
+    else:
+        x, y, w, h = p["x"] * K, p["y"] * K, p["w"] * K, p["h"] * K
     if s in ("Ellipse", "Circle"):
         rx, ry = (min(w, h) / 2,) * 2 if s == "Circle" else (w / 2, h / 2)
-        return f'<ellipse cx="0" cy="0" rx="{rx}" ry="{ry}"/>'
-    if s in ("Rectangle", "RoundedRectangle", "Capsule", "Uneven"):
-        r = {"Rectangle": 0, "RoundedRectangle": p.get("cr", 0), "Capsule": min(w, h) / 2}.get(s, 0)
-        if s == "Uneven":
-            r = max(p["radii"]) * 0.6
-        return f'<rect x="{-w/2}" y="{-h/2}" width="{w}" height="{h}" rx="{r}"/>'
-    if s == "RingTrim":
-        a, b = p["trim"]
-        c = math.pi * w
-        return (f'<circle cx="0" cy="0" r="{w/2}" fill="none" stroke="{rgb(p["fill"])}" stroke-width="{p["lw"]}" '
-                f'stroke-linecap="round" stroke-dasharray="0 {c*a} {c*(b-a)} {c}"/>')
-    pts = " ".join(f"{(u-0.5)*w},{(v-0.5)*h}" for u, v in POLYS[s][1])
-    return f'<polygon points="{pts}"/>'
+        if p.get("trim"):
+            a, b = p["trim"]
+            c = 2 * math.pi * rx
+            attrs = attrs.replace('fill="none"', 'fill="none" stroke-dasharray="0 %s %s %s"' % (c * a, c * (b - a), c))
+        body = f'<ellipse cx="0" cy="0" rx="{rx}" ry="{ry}"/>'
+    elif s == "Bolt":
+        pts = [(0.55, 0), (0.1, 0.55), (0.45, 0.55), (0.3, 1), (0.9, 0.4), (0.55, 0.4), (0.85, 0)]
+        body = '<polygon points="%s"/>' % " ".join(f"{(u-.5)*w},{(v-.5)*h}" for u, v in pts)
+    else:
+        r = {"Capsule": min(w, h) / 2, "RoundedRectangle": p.get("cr", 0),
+             "Uneven": p.get("radii", (0,))[0] * K * 0.8}.get(s, 0)
+        body = f'<rect x="{-w/2}" y="{-h/2}" width="{w}" height="{h}" rx="{r}"/>'
+    return f'<g transform="translate({x},{y}) rotate({p["rot"]})" {attrs}>{body}</g>'
 
 
-def svg_part(p, side):
-    x, rot = p["x"] * side, p["rot"] * side
-    fill = "url(#glow)" if p["fill"] == "GLOW" else rgb(p["fill"])
-    attrs = f'fill="{fill}" opacity="{p.get("opacity", 1)}"'
-    if "stroke" in p:
-        attrs += f' stroke="{rgb(p["stroke"][0])}" stroke-width="{p["stroke"][1]}"'
-    if "shadow" in p:
-        attrs += f' filter="url(#sh_{p["shadow"][0]})"'
-    return f'<g transform="translate({W/2 + x},{H/2 + p["y"]}) rotate({rot})" {attrs}>{svg_shape(p)}</g>'
-
-
-def svg():
+def svg(ref=None):
+    ox, oy = (W - CW) / 2, (H - CH) / 2 + CANVAS_Y
     out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">',
-           '<defs><radialGradient id="glow"><stop offset="0" stop-color="white"/>'
-           f'<stop offset="1" stop-color="{rgb("ZekromBlue")}"/></radialGradient>']
+           '<defs><radialGradient id="fan"><stop offset="0" stop-color="%s"/>'
+           '<stop offset="0.35" stop-color="%s"/><stop offset="1" stop-color="%s"/></radialGradient>'
+           % (rgb("ZekromBlue"), rgb("ZekromShade"), rgb("ZekromOutline"))]
     for c in COLORS:
-        out.append(f'<filter id="sh_{c}" x="-1" y="-1" width="3" height="3"><feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="{rgb(c)}"/></filter>')
+        out.append(f'<filter id="sh_{c}" x="-1" y="-1" width="3" height="3"><feDropShadow dx="0" dy="0" '
+                   f'stdDeviation="5" flood-color="{rgb(c)}"/></filter>')
     out.append(f'</defs><rect width="{W}" height="{H}" fill="{rgb("StormSky")}"/>')
-    out += [svg_part(p, 1) for g, p in parts if g == "Sky"]
-    out.append(f'<g transform="translate({W/2},{H/2}) scale({S}) translate({-W/2},{-H/2})">')
     for g, p in parts:
         if g == "Sky":
-            continue
-        if p.get("sym"):
-            out.append(svg_part(p, -1))
-        out.append(svg_part(p, 1))
+            out += [svg_part(dict(p, x=x, y=y)) for x, y in p.get("rain", [(p["x"], p["y"])])]
+    out.append(f'<g transform="translate({ox},{oy})">')
+    out += [svg_part(p) for g, p in parts if g != "Sky"]
+    if ref:
+        out.append(f'<image href="{ref}" width="{CW}" height="{CH}" opacity="0.45"/>')
     out.append("</g></svg>")
     return "\n".join(out)
 
 
-# =================== SwiftUI code ===================
+# ======================== SwiftUI code ========================
 def lower(name):
     return name[0].lower() + name[1:]
 
 
 def n(v):
+    v = round(v * 2) / 2
     return str(int(v)) if float(v).is_integer() else f"{v:g}"
 
 
+def swift_stroke(st):
+    c, w = st if isinstance(st, tuple) else ("ZekromOutline", 1.5)
+    return f".stroke(Color.{lower(c)}, style: StrokeStyle(lineWidth: {n(w)}, lineJoin: .round))"
+
+
 def swift_part(p, ind):
-    s, sym = p["shape"], p.get("sym")
-    sx = lambda v: f"{n(v)} * side" if sym and v != 0 else n(v)
-    lines = []
-    if s == "Uneven":
-        tl, bl, br, tr = p["radii"]
-        lines.append(f"UnevenRoundedRectangle(topLeadingRadius: {tl}, bottomLeadingRadius: {bl}, "
-                     f"bottomTrailingRadius: {br}, topTrailingRadius: {tr})")
-    elif s == "RoundedRectangle":
-        lines.append(f"RoundedRectangle(cornerRadius: {p['cr']})")
-    elif s == "RingTrim":
-        a, b = p["trim"]
-        lines.append("Circle()")
-        lines.append(f"    .trim(from: {a}, to: {b})")
-        lines.append(f"    .stroke(Color.{lower(p['fill'])}, style: StrokeStyle(lineWidth: {p['lw']}, lineCap: .round))")
-    else:
-        lines.append(f"{s}()")
-    if s != "RingTrim":
-        if p["fill"] == "GLOW":
-            lines.append("    .fill(RadialGradient(colors: [.white, Color.zekromBlue], center: .center, startRadius: 2, endRadius: 32))")
+    L = []
+    if p["kind"] == "poly":
+        pts = [f"({x}, {y})" for x, y in canvas_pts(p)]
+        arg = ", smooth: true" if p["smooth"] else ""
+        if len(pts) <= 6:
+            L.append(f"Outline([{', '.join(pts)}]{arg})")
         else:
-            lines.append(f"    .fill(Color.{lower(p['fill'])})")
-    if "stroke" in p:
-        lines.append(f"    .stroke(Color.{lower(p['stroke'][0])}, lineWidth: {p['stroke'][1]})")
-    lines.append(f"    .frame(width: {n(p['w'])}, height: {n(p['h'])})")
-    if p["rot"]:
-        lines.append(f"    .rotationEffect(.degrees({sx(p['rot'])}))")
-    if p["x"]:
-        lines.append(f"    .offset(x: {sx(p['x'])}, y: {n(p['y'])})")
+            L.append("Outline([")
+            L += ["    " + ", ".join(pts[i:i + 6]) + "," for i in range(0, len(pts), 6)]
+            L[-1] = L[-1].rstrip(",")
+            L.append(f"]{arg})")
+        L.append(f"    .fill(Color.{lower(p['fill'])})")
+        if p["stroke"]:
+            L.append("    " + swift_stroke(True))
+        if p.get("opacity"):
+            L.append(f"    .opacity({p['opacity']})")
+        return [ind + l for l in L]
+
+    s, sky = p["shape"], p.get("sky")
+    f = (lambda v: v) if sky else (lambda v: v * K)
+    if s == "Uneven":
+        tl, bl, br, tr = [round(r * K) for r in p["radii"]]
+        L.append(f"UnevenRoundedRectangle(topLeadingRadius: {tl}, bottomLeadingRadius: {bl}, "
+                 f"bottomTrailingRadius: {br}, topTrailingRadius: {tr})")
+    elif s == "RoundedRectangle":
+        L.append(f"RoundedRectangle(cornerRadius: {p['cr']})")
     else:
-        lines.append(f"    .offset(y: {n(p['y'])})")
-    if "opacity" in p:
-        lines.append(f"    .opacity({p['opacity']})")
-    if "shadow" in p:
-        lines.append(f"    .shadow(color: Color.{lower(p['shadow'][0])}, radius: {p['shadow'][1]})")
-    return [ind + l for l in lines]
+        L.append(f"{s}()")
+    if p.get("trim"):
+        L.append(f"    .trim(from: {p['trim'][0]}, to: {p['trim'][1]})")
+    if p["fill"] == "FAN":
+        L.append("    .fill(RadialGradient(colors: [Color.zekromBlue, Color.zekromShade, Color.zekromOutline],")
+        L.append(f"                         center: .center, startRadius: 0, endRadius: {n(p['h'] * K / 2)}))")
+    elif p["fill"]:
+        L.append(f"    .fill(Color.{lower(p['fill'])})")
+    if p["stroke"]:
+        L.append("    " + swift_stroke(p["stroke"]))
+    L.append(f"    .frame(width: {n(f(p['w']))}, height: {n(f(p['h']))})")
+    if p["rot"]:
+        L.append(f"    .rotationEffect(.degrees({n(p['rot'])}))")
+    if p.get("rain"):
+        L.append("    .offset(x: spot.x, y: spot.y)")
+    elif sky:
+        L.append(f"    .offset(x: {n(p['x'])}, y: {n(p['y'])})" if p["x"] else f"    .offset(y: {n(p['y'])})")
+    else:
+        L.append(f"    .position(x: {n(f(p['x']))}, y: {n(f(p['y']))})")
+    if p.get("opacity"):
+        L.append(f"    .opacity({p['opacity']})")
+    if p.get("shadow"):
+        L.append(f"    .shadow(color: Color.{lower(p['shadow'][0])}, radius: {p['shadow'][1]})")
+    if p.get("rain"):
+        spots = ", ".join(f"CGPoint(x: {x}, y: {y})" for x, y in p["rain"][:3])
+        spots2 = ", ".join(f"CGPoint(x: {x}, y: {y})" for x, y in p["rain"][3:])
+        L = ["ForEach([", f"    {spots},", f"    {spots2}", "], id: \\.x) { spot in"] + ["    " + l for l in L] + ["}"]
+    return [ind + l for l in L]
 
 
 def swift_group(g):
     name, doc = GROUPS[g]
     out = [f"// MARK: - {doc}", "", f"struct {name}: View {{", "    var body: some View {", "        ZStack {"]
-    items = [p for gg, p in parts if gg == g]
-    i, last_note = 0, None
-    while i < len(items):
-        if items[i].get("sym"):
-            j = i
-            while j < len(items) and items[j].get("sym"):
-                j += 1
-            out.append("            // 左右各畫一次：side = -1 是左邊、1 是右邊")
-            out.append("            ForEach(sides, id: \\.self) { side in")
-            for p in items[i:j]:
-                if p["note"] and p["note"] != last_note:
-                    out.append(f"                // {p['note']}")
-                    last_note = p["note"]
-                out += swift_part(p, " " * 16)
-            out.append("            }")
-            i = j
-        else:
-            p = items[i]
-            if p["note"] and p["note"] != last_note:
-                out.append(f"            // {p['note']}")
-                last_note = p["note"]
-            out += swift_part(p, " " * 12)
-            i += 1
+    for gg, p in parts:
+        if gg != g:
+            continue
+        if p["note"]:
+            out.append(f"            // {p['note']}")
+        out += swift_part(p, " " * 12)
     out += ["        }", "    }", "}", ""]
     return out
 
 
-def swift_poly(name):
-    doc, pts = POLYS[name]
-    out = [f"// {doc}", f"struct {name}: Shape {{", "    func path(in rect: CGRect) -> Path {", "        var path = Path()"]
-    for k, (u, v) in enumerate(pts):
-        fn = "move" if k == 0 else "addLine"
-        out.append(f"        path.{fn}(to: CGPoint(x: rect.width * {u}, y: rect.height * {v}))")
-    out += ["        path.closeSubpath()", "        return path", "    }", "}", ""]
-    return out
+SWIFT_HEAD = f'''//
+//  ContentView.swift
+//  ZekromShapes
+//
+//  #206 參考 Apple 的 Build with Stacks and Shapes，用形狀畫出捷克羅姆（Zekrom）。
+//  參考寶可夢官方繪圖描出外形：大部位用自訂的 Outline 形狀，細節用內建形狀。
+//  所有顏色都在 Assets.xcassets 以 RGB 設定，Xcode 會自動產生 Color.zekromBody 這類名稱。
+//
+
+import SwiftUI
+
+struct ContentView: View {{
+    var body: some View {{
+        ZStack {{
+            // 全螢幕背景：Assets 裡的 StormSky（暴風雨的天空）
+            Color.stormSky
+                .ignoresSafeArea()
+
+            StormBackdrop()
+
+            // 捷克羅姆：在 {CW} x {CH} 的畫布裡由後往前疊，後面的部位先畫
+            ZStack {{
+{chr(10).join(" " * 16 + GROUPS[g][0] + "()" for g in GROUPS if g != "Sky")}
+            }}
+            .frame(width: {CW}, height: {CH})
+            .offset(y: {CANVAS_Y})
+        }}
+    }}
+}}
+
+// MARK: - 自訂形狀
+
+/// 依序連起畫布上的點圍成的外形；smooth 為 true 時用二次曲線把轉角修圓。
+struct Outline: Shape {{
+    var points: [CGPoint]
+    var smooth = false
+
+    init(_ points: [(CGFloat, CGFloat)], smooth: Bool = false) {{
+        self.points = points.map {{ CGPoint(x: $0.0, y: $0.1) }}
+        self.smooth = smooth
+    }}
+
+    func path(in rect: CGRect) -> Path {{
+        var path = Path()
+        guard let last = points.last else {{ return path }}
+        if smooth {{
+            // 從最後一段的中點出發，每個點當控制點、畫到下一段的中點
+            path.move(to: midpoint(last, points[0]))
+            for i in points.indices {{
+                let next = points[(i + 1) % points.count]
+                path.addQuadCurve(to: midpoint(points[i], next), control: points[i])
+            }}
+        }} else {{
+            path.addLines(points)
+        }}
+        path.closeSubpath()
+        return path.offsetBy(dx: rect.minX, dy: rect.minY)
+    }}
+
+    private func midpoint(_ a: CGPoint, _ b: CGPoint) -> CGPoint {{
+        CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
+    }}
+}}
+
+/// 閃電
+struct Bolt: Shape {{
+    func path(in rect: CGRect) -> Path {{
+        var path = Path()
+        path.move(to: CGPoint(x: rect.width * 0.55, y: 0))
+        path.addLine(to: CGPoint(x: rect.width * 0.1, y: rect.height * 0.55))
+        path.addLine(to: CGPoint(x: rect.width * 0.45, y: rect.height * 0.55))
+        path.addLine(to: CGPoint(x: rect.width * 0.3, y: rect.height))
+        path.addLine(to: CGPoint(x: rect.width * 0.9, y: rect.height * 0.4))
+        path.addLine(to: CGPoint(x: rect.width * 0.55, y: rect.height * 0.4))
+        path.addLine(to: CGPoint(x: rect.width * 0.85, y: 0))
+        path.closeSubpath()
+        return path
+    }}
+}}
+'''
 
 
 def swift():
-    out = ["//",
-           "//  ContentView.swift",
-           "//  ZekromShapes",
-           "//",
-           "//  #206 參考 Apple 的 Build with Stacks and Shapes，用形狀畫出捷克羅姆（Zekrom）。",
-           "//  所有顏色都在 Assets.xcassets 以 RGB 設定，Xcode 會自動產生 Color.zekromBlack 這類名稱。",
-           "//",
-           "",
-           "import SwiftUI",
-           "",
-           "/// 左右對稱的部位用 ForEach 畫兩次：x 位移與旋轉角度乘上 side 就會左右翻轉。",
-           "let sides: [CGFloat] = [-1, 1]",
-           "",
-           "struct ContentView: View {",
-           "    var body: some View {",
-           "        ZStack {",
-           "            // 全螢幕背景：Assets 裡的 StormSky（暴風雨夜空）",
-           "            Color.stormSky",
-           "                .ignoresSafeArea()",
-           "",
-           "            StormBackdrop()",
-           "",
-           "            // Zekrom 本體：由後往前疊，後面的部位先畫",
-           "            ZStack {",
-           "                ZekromTail()",
-           "                ZekromWings()",
-           "                ZekromLegs()",
-           "                ZekromTorso()",
-           "                ZekromArms()",
-           "                ZekromHead()",
-           "            }",
-           f"            .scaleEffect({S})",
-           "        }",
-           "    }",
-           "}",
-           ""]
+    out = [SWIFT_HEAD]
     for g in GROUPS:
         out += swift_group(g)
-    out.append("// MARK: - 自訂形狀（座標以 rect 的寬高比例表示）")
-    out.append("")
-    for name in POLYS:
-        out += swift_poly(name)
     out += ["#Preview {", "    ContentView()", "}", ""]
     return "\n".join(out)
 
@@ -326,7 +450,8 @@ def assets(root):
 if __name__ == "__main__":
     mode, target = sys.argv[1], sys.argv[2]
     if mode == "svg":
-        open(target, "w").write(svg())
+        ref = sys.argv[4] if len(sys.argv) > 4 and sys.argv[3] == "--ref" else None
+        open(target, "w").write(svg(ref))
     elif mode == "swift":
         open(target, "w").write(swift())
     elif mode == "assets":
