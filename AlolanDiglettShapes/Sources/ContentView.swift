@@ -1,6 +1,6 @@
 //
 //  ContentView.swift
-//  ZekromShapes
+//  AlolanDiglettShapes
 //
 //  SwiftUI Shapes 作業：用基本形狀畫出阿羅拉地鼠。
 //  使用 Circle、Ellipse、Capsule、Rectangle、RoundedRectangle、

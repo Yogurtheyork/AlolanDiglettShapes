@@ -15,9 +15,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "7C0000000000000000000041"
-               BuildableName = "ZekromShapes.app"
-               BlueprintName = "ZekromShapes"
-               ReferencedContainer = "container:ZekromShapes.xcodeproj">
+               BuildableName = "AlolanDiglettShapes.app"
+               BlueprintName = "AlolanDiglettShapes"
+               ReferencedContainer = "container:AlolanDiglettShapes.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -43,9 +43,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "7C0000000000000000000041"
-            BuildableName = "ZekromShapes.app"
-            BlueprintName = "ZekromShapes"
-            ReferencedContainer = "container:ZekromShapes.xcodeproj">
+            BuildableName = "AlolanDiglettShapes.app"
+            BlueprintName = "AlolanDiglettShapes"
+            ReferencedContainer = "container:AlolanDiglettShapes.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -60,9 +60,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "7C0000000000000000000041"
-            BuildableName = "ZekromShapes.app"
-            BlueprintName = "ZekromShapes"
-            ReferencedContainer = "container:ZekromShapes.xcodeproj">
+            BuildableName = "AlolanDiglettShapes.app"
+            BlueprintName = "AlolanDiglettShapes"
+            ReferencedContainer = "container:AlolanDiglettShapes.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

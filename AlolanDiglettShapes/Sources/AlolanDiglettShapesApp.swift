@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct ZekromShapesApp: App {
+struct AlolanDiglettShapesApp: App {
     var body: some Scene {
         WindowGroup { ContentView() }
     }

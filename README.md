@@ -29,12 +29,10 @@
 
 ## 主要檔案
 
-- `ZekromShapes/Sources/ContentView.swift`：阿羅拉地鼠畫面與所有 Shape
-- `ZekromShapes/Sources/ZekromShapesApp.swift`：App 入口
-- `ZekromShapes/Assets.xcassets`：作業使用的 RGB 顏色
+- `AlolanDiglettShapes/Sources/ContentView.swift`：阿羅拉地鼠畫面與所有 Shape
+- `AlolanDiglettShapes/Sources/AlolanDiglettShapesApp.swift`：App 入口
+- `AlolanDiglettShapes/Assets.xcassets`：作業使用的 RGB 顏色
 
 ## 執行
 
-使用 Xcode 開啟 `ZekromShapes.xcodeproj`，選擇 iPhone Simulator 後執行即可。
-
-> 專案資料夾名稱仍保留原本的 `ZekromShapes`，但目前作業作品內容已改為阿羅拉地鼠。
+使用 Xcode 開啟 `AlolanDiglettShapes.xcodeproj`，選擇 iPhone Simulator 後執行即可。
