@@ -2,8 +2,9 @@
 //  ContentView.swift
 //  ZekromShapes
 //
-//  用 SwiftUI 的基本形狀畫出阿羅拉地鼠。
-//  角色由身體、眼睛、鼻子、三根黃色呆毛，以及前景土堆和小石頭組成。
+//  SwiftUI Shapes 作業：用基本形狀畫出阿羅拉地鼠。
+//  使用 Circle、Ellipse、Capsule、Rectangle、RoundedRectangle、
+//  UnevenRoundedRectangle、自訂 Shape、ZStack 與 Assets RGB 顏色。
 //
 
 import SwiftUI
@@ -11,98 +12,135 @@ import SwiftUI
 struct ContentView: View {
     var body: some View {
         ZStack {
-            // 淡色背景，讓棕色地鼠和灰色土堆更容易看清楚。
-            Color(red: 0.96, green: 0.95, blue: 0.91)
+            // 全螢幕背景：顏色來自 Assets.xcassets。
+            Color("SandBackground")
                 .ignoresSafeArea()
 
-            ZStack {
-                // 阿羅拉地鼠頭頂的三根黃色呆毛，放在身體最上方。
-                AlolanHair()
-                    .position(x: 85, y: 4)
+            // 底部地面色帶，示範 Rectangle。
+            Rectangle()
+                .fill(Color("GroundBrown").opacity(0.18))
+                .frame(height: 150)
+                .frame(maxHeight: .infinity, alignment: .bottom)
 
-                // 地鼠身體：上方圓弧、下方平底，方便被土堆遮住。
+            ZStack {
+                // 頭頂三根金黃色呆毛。
+                AlolanHair()
+                    .position(x: 110, y: 34)
+
+                // 地鼠身體。
                 DiglettBodyShape()
                     .fill(
-                        // 棕色漸層讓身體有一點立體感。
                         LinearGradient(
                             colors: [
-                                Color(red: 0.74, green: 0.56, blue: 0.38),
-                                Color(red: 0.58, green: 0.38, blue: 0.22)
+                                Color("DiglettBody"),
+                                Color("DiglettShade")
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
                     )
-                    // 深色外框讓地鼠輪廓更接近官方圖的手繪感。
                     .overlay(
                         DiglettBodyShape()
-                            .stroke(Color(red: 0.23, green: 0.14, blue: 0.10), lineWidth: 3)
+                            .stroke(Color("DiglettOutline"), lineWidth: 3)
                     )
+                    .shadow(radius: 4, y: 2)
 
-                // 兩顆直立黑眼睛。
+                // 左眼。
                 Eye()
-                    .position(x: 60, y: 92)
-                Eye()
-                    .position(x: 110, y: 92)
+                    .position(x: 78, y: 118)
 
-                // 粉紅色鼻子。
+                // 右眼。
+                Eye()
+                    .position(x: 142, y: 118)
+
+                // 鼻子：Ellipse。
                 Ellipse()
-                    .fill(Color(red: 0.95, green: 0.57, blue: 0.66))
+                    .fill(Color("NosePink"))
                     .overlay(
                         Ellipse()
-                            .stroke(Color(red: 0.45, green: 0.20, blue: 0.24), lineWidth: 2)
+                            .stroke(Color("DiglettOutline"), lineWidth: 2)
                     )
-                    .frame(width: 62, height: 40)
-                    .position(x: 85, y: 132)
+                    .frame(width: 76, height: 48)
+                    .position(x: 110, y: 164)
 
-                // 鼻子上的小反光。
+                // 鼻子反光。
                 Ellipse()
-                    .fill(Color.white.opacity(0.35))
-                    .frame(width: 26, height: 10)
+                    .fill(.white.opacity(0.38))
+                    .frame(width: 30, height: 11)
                     .rotationEffect(.degrees(-10))
-                    .position(x: 72, y: 122)
+                    .position(x: 94, y: 151)
 
-                // 前景土堆和小石頭，蓋住身體底部，製造「從地裡鑽出來」的效果。
+                // 前景土堆與石頭，遮住身體底部。
                 FrontRocks()
-                    .position(x: 85, y: 284)
+                    .position(x: 110, y: 332)
             }
-            .frame(width: 170, height: 300)
-            .offset(y: -24)
+            .frame(width: 220, height: 360)
+            .offset(y: -18)
         }
     }
 }
 
-/// 地鼠前方的灰色土堆，包含一個不規則土堆和幾顆小石頭。
+/// 地鼠前方的土堆與小石頭。
 struct FrontRocks: View {
     var body: some View {
         ZStack {
-            // 主要土堆。
+            // 不規則主土堆。
             GroundShape()
-                .fill(Color(red: 0.48, green: 0.49, blue: 0.46))
+                .fill(Color("RockGray"))
                 .overlay(
                     GroundShape()
-                        .stroke(Color(red: 0.22, green: 0.22, blue: 0.20), lineWidth: 1.7)
+                        .stroke(Color("DiglettOutline"), lineWidth: 1.7)
                 )
-                .frame(width: 220, height: 95)
-                .position(x: 110, y: 48)
+                .frame(width: 255, height: 105)
+                .position(x: 128, y: 52)
 
-            // 散在土堆上的小石頭，集中在土堆附近。
-            SmallRock(width: 42, height: 24, rotation: -12)
-                .position(x: 42, y: 45)
-            SmallRock(width: 34, height: 20, rotation: 9)
-                .position(x: 87, y: 34)
-            SmallRock(width: 48, height: 25, rotation: 15)
-                .position(x: 137, y: 42)
-            SmallRock(width: 31, height: 18, rotation: -5)
-                .position(x: 177, y: 54)
-            SmallRock(width: 25, height: 15, rotation: 18)
-                .position(x: 104, y: 64)
+            // RoundedRectangle：左側扁石。
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color("RockLight"))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color("DiglettOutline"), lineWidth: 1.2)
+                )
+                .frame(width: 52, height: 24)
+                .rotationEffect(.degrees(-10))
+                .position(x: 48, y: 46)
+
+            // UnevenRoundedRectangle：右側較不規則的扁石。
+            UnevenRoundedRectangle(
+                topLeadingRadius: 12,
+                bottomLeadingRadius: 5,
+                bottomTrailingRadius: 10,
+                topTrailingRadius: 4
+            )
+            .fill(Color("RockLight"))
+            .overlay(
+                UnevenRoundedRectangle(
+                    topLeadingRadius: 12,
+                    bottomLeadingRadius: 5,
+                    bottomTrailingRadius: 10,
+                    topTrailingRadius: 4
+                )
+                .stroke(Color("DiglettOutline"), lineWidth: 1.2)
+            )
+            .frame(width: 58, height: 25)
+            .rotationEffect(.degrees(13))
+            .position(x: 160, y: 49)
+
+            // Ellipse：中央小石頭。
+            SmallRock(width: 38, height: 21, rotation: 6)
+                .position(x: 103, y: 34)
+
+            SmallRock(width: 30, height: 17, rotation: -7)
+                .position(x: 205, y: 61)
+
+            SmallRock(width: 27, height: 15, rotation: 15)
+                .position(x: 124, y: 69)
         }
-        .frame(width: 220, height: 95)
+        .frame(width: 255, height: 105)
     }
 }
 
-/// 單顆橢圓形小石頭，可調整寬高與角度。
+/// 單顆橢圓形小石頭。
 struct SmallRock: View {
     var width: CGFloat
     var height: CGFloat
@@ -113,8 +151,8 @@ struct SmallRock: View {
             .fill(
                 LinearGradient(
                     colors: [
-                        Color(red: 0.74, green: 0.76, blue: 0.73),
-                        Color(red: 0.54, green: 0.55, blue: 0.52)
+                        Color("RockLight"),
+                        Color("RockGray")
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -122,27 +160,27 @@ struct SmallRock: View {
             )
             .overlay(
                 Ellipse()
-                    .stroke(Color(red: 0.22, green: 0.22, blue: 0.20), lineWidth: 1.2)
+                    .stroke(Color("DiglettOutline"), lineWidth: 1.2)
             )
             .frame(width: width, height: height)
             .rotationEffect(.degrees(rotation))
     }
 }
 
-/// 不規則的灰色土堆外形。
+/// 不規則土堆外形。
 struct GroundShape: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
 
-        path.move(to: CGPoint(x: rect.minX + 7, y: rect.midY + 8))
+        path.move(to: CGPoint(x: rect.minX + 8, y: rect.midY + 8))
         path.addQuadCurve(
-            to: CGPoint(x: rect.maxX - 10, y: rect.midY + 4),
-            control: CGPoint(x: rect.midX, y: rect.minY - 10)
+            to: CGPoint(x: rect.maxX - 10, y: rect.midY + 5),
+            control: CGPoint(x: rect.midX, y: rect.minY - 12)
         )
-        path.addLine(to: CGPoint(x: rect.maxX - 2, y: rect.maxY - 16))
+        path.addLine(to: CGPoint(x: rect.maxX - 3, y: rect.maxY - 16))
         path.addQuadCurve(
-            to: CGPoint(x: rect.minX + 4, y: rect.maxY - 11),
-            control: CGPoint(x: rect.midX, y: rect.maxY + 12)
+            to: CGPoint(x: rect.minX + 4, y: rect.maxY - 10),
+            control: CGPoint(x: rect.midX, y: rect.maxY + 13)
         )
         path.closeSubpath()
 
@@ -150,17 +188,17 @@ struct GroundShape: Shape {
     }
 }
 
-/// 地鼠的眼睛：黑色直立膠囊，左上角有白色反光。
+/// 地鼠眼睛：Capsule + Circle 反光。
 struct Eye: View {
     var body: some View {
         Capsule()
-            .fill(Color(red: 0.10, green: 0.08, blue: 0.07))
-            .frame(width: 14, height: 32)
+            .fill(Color("DiglettOutline"))
+            .frame(width: 16, height: 38)
             .overlay(alignment: .topLeading) {
                 Circle()
-                    .fill(Color.white.opacity(0.8))
-                    .frame(width: 4, height: 4)
-                    .offset(x: 4, y: 6)
+                    .fill(.white.opacity(0.85))
+                    .frame(width: 5, height: 5)
+                    .offset(x: 4, y: 7)
             }
     }
 }
@@ -190,35 +228,46 @@ struct AlolanHair: View {
     }
 }
 
-/// 一根彎曲的呆毛，由三個點決定：起點、控制點、終點。
+/// 一根彎曲的呆毛。
 struct HairStrand: Shape {
     var points: [CGPoint]
 
     func path(in rect: CGRect) -> Path {
         var path = Path()
         guard points.count == 3 else { return path }
+
         let origin = CGPoint(x: rect.midX, y: rect.midY)
 
-        path.move(to: CGPoint(x: origin.x + points[0].x, y: origin.y + points[0].y))
+        path.move(
+            to: CGPoint(
+                x: origin.x + points[0].x,
+                y: origin.y + points[0].y
+            )
+        )
         path.addQuadCurve(
-            to: CGPoint(x: origin.x + points[2].x, y: origin.y + points[2].y),
-            control: CGPoint(x: origin.x + points[1].x, y: origin.y + points[1].y)
+            to: CGPoint(
+                x: origin.x + points[2].x,
+                y: origin.y + points[2].y
+            ),
+            control: CGPoint(
+                x: origin.x + points[1].x,
+                y: origin.y + points[1].y
+            )
         )
 
         return path
     }
 }
 
-/// 把 HairStrand 畫成黃色粗線，並疊上一條深色細線當外框。
 extension HairStrand: View {
     var body: some View {
         self.stroke(
-            Color(red: 0.95, green: 0.82, blue: 0.32),
-            style: StrokeStyle(lineWidth: 6, lineCap: .round)
+            Color("HairGold"),
+            style: StrokeStyle(lineWidth: 7, lineCap: .round)
         )
         .overlay(
             self.stroke(
-                Color(red: 0.37, green: 0.28, blue: 0.05),
+                Color("DiglettOutline"),
                 style: StrokeStyle(lineWidth: 1.2, lineCap: .round)
             )
         )
@@ -226,7 +275,7 @@ extension HairStrand: View {
     }
 }
 
-/// 地鼠身體：上半部是圓弧，下方是平底，適合埋進土堆裡。
+/// 地鼠身體：上方圓弧、下方平底。
 struct DiglettBodyShape: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
