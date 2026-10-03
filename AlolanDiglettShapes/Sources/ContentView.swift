@@ -23,10 +23,6 @@ struct ContentView: View {
                 .frame(maxHeight: .infinity, alignment: .bottom)
 
             ZStack {
-                // 頭頂三根金黃色呆毛。
-                AlolanHair()
-                    .position(x: 110, y: 34)
-
                 // 地鼠身體。
                 DiglettBodyShape()
                     .fill(
@@ -44,6 +40,13 @@ struct ContentView: View {
                             .stroke(Color("DiglettOutline"), lineWidth: 3)
                     )
                     .shadow(radius: 4, y: 2)
+
+                // 阿羅拉地鼠最有特色的三根金黃色呆毛。
+                // 放在身體之後繪製，避免被身體蓋住。
+                AlolanHair()
+                    .frame(width: 120, height: 110)
+                    .position(x: 110, y: 34)
+                    .zIndex(3)
 
                 // 左眼。
                 Eye()
@@ -207,22 +210,25 @@ struct Eye: View {
 struct AlolanHair: View {
     var body: some View {
         ZStack {
+            // 左邊呆毛。
             HairStrand(points: [
-                CGPoint(x: 0, y: 32),
-                CGPoint(x: -11, y: 5),
-                CGPoint(x: -31, y: -18)
+                CGPoint(x: 0, y: 34),
+                CGPoint(x: -20, y: 8),
+                CGPoint(x: -42, y: -28)
             ])
 
+            // 中間呆毛。
             HairStrand(points: [
-                CGPoint(x: 0, y: 32),
-                CGPoint(x: 2, y: 2),
-                CGPoint(x: 1, y: -31)
+                CGPoint(x: 0, y: 34),
+                CGPoint(x: 0, y: 2),
+                CGPoint(x: 0, y: -42)
             ])
 
+            // 右邊呆毛。
             HairStrand(points: [
-                CGPoint(x: 0, y: 32),
-                CGPoint(x: 15, y: 5),
-                CGPoint(x: 38, y: -15)
+                CGPoint(x: 0, y: 34),
+                CGPoint(x: 22, y: 8),
+                CGPoint(x: 46, y: -25)
             ])
         }
     }
